@@ -1,7 +1,7 @@
 "use client"; // 브라우저에서 실행 선언
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/shared/lib/supabase";
+import { createClient } from "@/shared/lib/supabase/client";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -22,6 +22,8 @@ interface Task {
 }
 
 export default function KanbanPage() {
+  const supabase = createClient();
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [enabled, setEnabled] = useState(false); // 하이드레이션 미스매치 방어 패턴
@@ -35,7 +37,7 @@ export default function KanbanPage() {
     if (data) {
       setTasks(data as Task[]);
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     let isMounted = true;
@@ -49,7 +51,7 @@ export default function KanbanPage() {
 
     initialize();
 
-    // 🚀 [여기서부터 추가] Supabase Realtime 구독 인스턴스 생성
+    // Supabase Realtime 구독 인스턴스 생성
     const channel = supabase
       .channel("tasks-realtime") // 채널 고유 ID
       .on(
@@ -72,9 +74,9 @@ export default function KanbanPage() {
       // [중요] 구독 해제: 메모리 누수 및 좀비 인스턴스 방지, 클린업 함수 사용
       void supabase.removeChannel(channel);
     };
-  }, [loadTasks]);
+  }, [loadTasks, supabase]);
 
-  // 🚀 순서 정렬(Reordering)이 포함된 완전체 onDragEnd
+  // 순서 정렬이 포함된 onDragEnd
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
 
@@ -103,7 +105,7 @@ export default function KanbanPage() {
     );
     destTasks.splice(destination.index, 0, movedTask);
 
-    // 5. 순서 재계산 (Re-calculate): 목적지 컬럼 내의 모든 카드들에게 0번부터 새 order 부여
+    // 5. 순서 재계산: 목적지 컬럼 내의 모든 카드들에게 0번부터 새 order 부여
     const updatedDestTasks = destTasks.map((t, idx) => ({ ...t, order: idx }));
 
     // 6. 배열 재조립 (Re-assemble): 안 건드린 타 컬럼 카드들 + 방금 재정렬한 목적지 컬럼 카드들 합체
@@ -112,24 +114,27 @@ export default function KanbanPage() {
     );
     const finalTasks = [...otherTasks, ...updatedDestTasks];
 
-    // 🚀 화면 즉시 렌더링! (체감 속도 0.001초)
+    // 화면 즉시 렌더링
     setTasks(finalTasks);
 
-    // 7. DB 일괄 업데이트 (Bulk Update): 순서가 바뀐 대상들만 골라서 Supabase에 동시 전송
-    // Promise.all을 사용하여 병렬(Parallel) 통신으로 속도 극대화
-    const updatePromises = updatedDestTasks.map((t) =>
-      supabase
-        .from("tasks")
-        .update({ status: t.status, order: t.order })
-        .eq("id", t.id),
-    );
-
+    // [영속성 레이어 동기화]
+    // 개별 Update 요청을 방지하기 위해 Bulk Upsert 방식을 채택 (네트워크 I/O 최적화)
     try {
-      await Promise.all(updatePromises);
+      const { error } = await supabase.from("tasks").upsert(
+        updatedDestTasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          order: t.order,
+          content: t.content,
+        })),
+        { onConflict: "id" },
+      );
+
+      if (error) throw error;
     } catch (error) {
       console.error("순서 동기화 실패:", error);
-      // 실무: 실패 시 기존 tasks로 롤백(Rollback)하는 로직을 여기에 추가함
-      setTasks(tasks);
+      setTasks(tasks); // 실패 시 롤백
     }
   };
 
