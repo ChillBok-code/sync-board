@@ -1,6 +1,7 @@
 "use client"; // 브라우저에서 실행 선언
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/client";
 import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
@@ -22,11 +23,24 @@ interface Task {
 }
 
 export default function KanbanPage() {
+  const router = useRouter();
+
   const supabase = createClient();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [enabled, setEnabled] = useState(false); // 하이드레이션 미스매치 방어 패턴
+
+  // 세션 무효화 (로그아웃) 핸들러
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("로그아웃 실패:", error.message);
+      return;
+    }
+    router.push("/login");
+    router.refresh();
+  };
 
   const loadTasks = useCallback(async () => {
     const { data } = await supabase
@@ -179,32 +193,52 @@ export default function KanbanPage() {
   return (
     <div className="p-8 min-h-screen bg-gray-900 text-white font-sans">
       <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-gray-800 pb-8">
-        <div>
-          <h1 className="text-4xl font-black tracking-tighter text-indigo-400 uppercase">
-            SYNC BOARD
-          </h1>
-          <p className="text-slate-400 mt-2 text-lg font-medium italic">
-            ChillBok-code&apos;s Workspace
-          </p>
+        <div className="flex justify-between items-center w-full md:w-auto">
+          <div>
+            <h1 className="text-4xl font-black tracking-tighter text-indigo-400 uppercase">
+              SYNC BOARD
+            </h1>
+            <p className="text-slate-400 mt-2 text-lg font-medium italic">
+              ChillBok-code&apos;s Workspace
+            </p>
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={handleSignOut}
+            className="md:hidden border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
+          >
+            Logout
+          </Button>
         </div>
 
-        <form
-          onSubmit={handleAddTask}
-          className="flex gap-3 bg-gray-800 p-2 rounded-2xl border border-gray-700 shadow-2xl"
-        >
-          <Input
-            value={newTaskTitle}
-            onChange={(e) => setNewTaskTitle(e.target.value)}
-            placeholder="해야 할 일은 무엇인가요?"
-            className="bg-transparent border-none w-64 text-white focus-visible:ring-0 placeholder:text-gray-500"
-          />
-          <Button
-            type="submit"
-            className="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-6 font-bold transition-all hover:scale-105 active:scale-95"
+        <div className="flex items-center gap-4">
+          <form
+            onSubmit={handleAddTask}
+            className="flex gap-3 bg-gray-800 p-2 rounded-2xl border border-gray-700 shadow-2xl w-full md:w-auto"
           >
-            ADD
+            <Input
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              placeholder="해야 할 일은 무엇인가요?"
+              className="bg-transparent border-none w-64 text-white focus-visible:ring-0 placeholder:text-gray-500"
+            />
+            <Button
+              type="submit"
+              className="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-6 font-bold transition-all hover:scale-105 active:scale-95"
+            >
+              ADD
+            </Button>
+          </form>
+
+          <Button
+            variant="outline"
+            onClick={handleSignOut}
+            className="hidden md:block border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white h-full px-6 rounded-xl"
+          >
+            Logout
           </Button>
-        </form>
+        </div>
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
