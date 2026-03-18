@@ -49,12 +49,19 @@ export default function TaskCard({
 
   return (
     <Draggable draggableId={task.id.toString()} index={index}>
-      {(provided) => (
+      {/* 1. snapshot 인자를 추가합니다 (드래그 상태 확인용) ★ */}
+      {(provided, snapshot) => (
         <div
           ref={provided.innerRef}
           {...provided.draggableProps}
           {...provided.dragHandleProps}
-          // 2. 완료 시 투명도 조절 (opacity-50)
+          // 2. style 속성을 추가하여 터치 동작을 제어합니다 ★
+          style={{
+            ...provided.draggableProps.style,
+            touchAction: "none", // 브라우저의 새로고침/스크롤 개입 차단
+            // 드래그 중일 때 위치 어긋남 방지 (필요 시)
+            cursor: snapshot.isDragging ? "grabbing" : "grab",
+          }}
           className={`transition-opacity duration-300 ${isDone ? "opacity-50" : "opacity-100"}`}
         >
           <Card
