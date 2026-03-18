@@ -2,13 +2,13 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 /**
- * 🚀 서버용 Supabase 클라이언트를 생성하는 팩토리 함수
+ * 서버용 Supabase 클라이언트를 생성하는 팩토리 함수
  * @description 반드시 await를 붙여서 호출해야 합니다.
  */
 export async function createClient() {
   const cookieStore = await cookies();
 
-  // ⚡ 여기서 'createServerClient'를 직접 실행합니다.
+  // 여기서 'createServerClient'를 직접 실행합니다.
   // 이 호출문이 있어야 상단의 'import { createServerClient }' 경고가 사라집니다.
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

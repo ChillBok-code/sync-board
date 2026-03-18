@@ -3,16 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/client";
-import { Card, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
-import {
-  DragDropContext,
-  Droppable,
-  Draggable,
-  DropResult,
-} from "@hello-pangea/dnd";
+import { DragDropContext, Droppable, DropResult } from "@hello-pangea/dnd";
+import TaskCard from "@/app/components/TaskCard";
 
 interface Task {
   id: number;
@@ -77,7 +72,7 @@ export default function KanbanPage() {
         },
         () => {
           // 데이터 변경 감지 시 최신 목록 재요청(Re-fetching)
-          void loadTasks();
+          //void loadTasks();
         },
       )
       .subscribe();
@@ -175,7 +170,7 @@ export default function KanbanPage() {
     // DB에서 해당 레코드 삭제
     const { error } = await supabase.from("tasks").delete().eq("id", taskId);
 
-    // 삭제 실패 시 원래 상태로 롤백(Rollback)
+    // 삭제 실패 시 원래 상태로 롤백
     if (error) {
       console.error("삭제 실패:", error);
       setTasks(previousTasks);
@@ -269,54 +264,13 @@ export default function KanbanPage() {
                     {tasks
                       .filter((t) => t.status === status)
                       .map((task, index) => (
-                        <Draggable
+                        <TaskCard
                           key={task.id}
-                          draggableId={task.id.toString()}
+                          task={task}
                           index={index}
-                        >
-                          {(provided) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                            >
-                              <Card className="bg-gray-800 border-gray-700/50 hover:border-indigo-500/50 hover:bg-gray-700/50 transition-all duration-300 shadow-lg rounded-2xl group">
-                                {/* Flexbox를 사용해 제목과 삭제 버튼을 양끝으로 배치 (justify-between) */}
-                                <CardHeader className="p-5 flex flex-row items-center justify-between space-y-0">
-                                  <CardTitle className="text-md font-semibold text-gray-200 leading-snug">
-                                    {task.title}
-                                  </CardTitle>
-
-                                  {/* 🚀 삭제 버튼 추가 및 이벤트 바인딩 */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation(); // [핵심] 이벤트 버블링 차단
-                                      handleDeleteTask(task.id);
-                                    }}
-                                    className="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                                    aria-label="Delete task"
-                                  >
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      width="18"
-                                      height="18"
-                                      viewBox="0 0 24 24"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    >
-                                      <path d="M3 6h18"></path>
-                                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                                    </svg>
-                                  </button>
-                                </CardHeader>
-                              </Card>
-                            </div>
-                          )}
-                        </Draggable>
+                          onDelete={handleDeleteTask} // 기존 삭제 로직 연결
+                          onRefresh={loadTasks} // 수정 후 목록 새로고침 로직 연결
+                        />
                       ))}
                     {provided.placeholder}
                   </div>
