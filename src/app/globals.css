@@ -123,3 +123,15 @@
     @apply bg-background text-foreground;
   }
 }
+html,
+body {
+  /* 1. 화면 끝에서 당겨도 흰 배경이 나오지 않게 함 (새로고침 방지) */
+  overscroll-behavior-y: none;
+
+  /* 2. 배경색이 끊기지 않도록 전체 영역에 배경색 지정 */
+  background-color: #111827; /* gray-900 색상 */
+
+  /* 3. 모바일에서 꾹 누를 때 텍스트 선택되는 것 방지 */
+  -webkit-user-select: none;
+  user-select: none;
+}

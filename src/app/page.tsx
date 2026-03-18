@@ -186,7 +186,7 @@ export default function KanbanPage() {
   }
 
   return (
-    <div className="p-8 min-h-screen bg-gray-900 text-white font-sans">
+    <div className="p-8 min-h-[100dvh] bg-gray-900 text-white font-sans selection:bg-indigo-500/30">
       <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-gray-800 pb-8">
         <div className="flex justify-between items-center w-full md:w-auto">
           <div>
