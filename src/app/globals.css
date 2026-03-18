@@ -123,15 +123,27 @@
     @apply bg-background text-foreground;
   }
 }
+/* 1. 최상위 요소들을 완전히 고정 */
 html,
 body {
-  /* 1. 화면 끝에서 당겨도 흰 배경이 나오지 않게 함 (새로고침 방지) */
+  position: fixed;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  /* 어느 방향으로도 당겨지지 않게 함 */
+  overscroll-behavior: none;
+  /* 모바일에서 꾹 누를 때 나오는 시스템 메뉴 방지 */
+  -webkit-touch-callout: none;
+}
+
+/* 2. 실제 스크롤이 일어나는 영역만 따로 지정 */
+/* page.tsx의 최상위 div에 이 id를 추가하세요 */
+#scroll-container {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  /* 스크롤이 끝에 닿아도 부모(body)에게 전파되지 않게 함 */
   overscroll-behavior-y: none;
-
-  /* 2. 배경색이 끊기지 않도록 전체 영역에 배경색 지정 */
-  background-color: #111827; /* gray-900 색상 */
-
-  /* 3. 모바일에서 꾹 누를 때 텍스트 선택되는 것 방지 */
-  -webkit-user-select: none;
-  user-select: none;
+  -webkit-overflow-scrolling: touch;
+  background-color: #111827; /* gray-900 */
 }

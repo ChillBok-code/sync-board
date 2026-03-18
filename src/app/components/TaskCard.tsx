@@ -58,9 +58,10 @@ export default function TaskCard({
           // 2. style 속성을 추가하여 터치 동작을 제어합니다 ★
           style={{
             ...provided.draggableProps.style,
-            touchAction: "none", // 브라우저의 새로고침/스크롤 개입 차단
-            // 드래그 중일 때 위치 어긋남 방지 (필요 시)
-            cursor: snapshot.isDragging ? "grabbing" : "grab",
+            touchAction: "none", // 카드를 잡는 순간 브라우저의 모든 터치 개입을 차단
+            /* 드래그 시 카드가 손가락 아래에 정확히 붙어있게 함 */
+            userSelect: "none",
+            WebkitUserSelect: "none",
           }}
           className={`transition-opacity duration-300 ${isDone ? "opacity-50" : "opacity-100"}`}
         >

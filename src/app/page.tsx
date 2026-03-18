@@ -186,7 +186,7 @@ export default function KanbanPage() {
   }
 
   return (
-    <div className="p-8 min-h-[100dvh] bg-gray-900 text-white font-sans selection:bg-indigo-500/30">
+    <div id="scroll-container" className="p-8 text-white font-sans">
       <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-gray-800 pb-8">
         <div className="flex justify-between items-center w-full md:w-auto">
           <div>
@@ -237,7 +237,7 @@ export default function KanbanPage() {
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pb-20">
           {["todo", "doing", "done"].map((status) => (
             <Droppable droppableId={status} key={status}>
               {(provided) => (
