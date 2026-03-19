@@ -180,7 +180,7 @@ export default function KanbanPage() {
   if (!enabled) {
     return (
       <div className="p-8 min-h-screen bg-gray-900 text-white">
-        Initializing...
+        초기화 중...
       </div>
     );
   }
@@ -203,7 +203,7 @@ export default function KanbanPage() {
             onClick={handleSignOut}
             className="md:hidden border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
           >
-            Logout
+            로그아웃
           </Button>
         </div>
 
@@ -215,14 +215,14 @@ export default function KanbanPage() {
             <Input
               value={newTaskTitle}
               onChange={(e) => setNewTaskTitle(e.target.value)}
-              placeholder="해야 할 일은 무엇인가요?"
+              placeholder="무엇을 해야 하나요?"
               className="bg-transparent border-none w-64 text-white focus-visible:ring-0 placeholder:text-gray-500"
             />
             <Button
               type="submit"
               className="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-6 font-bold transition-all hover:scale-105 active:scale-95"
             >
-              ADD
+              추가
             </Button>
           </form>
 
@@ -231,7 +231,7 @@ export default function KanbanPage() {
             onClick={handleSignOut}
             className="hidden md:block border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white h-full px-6 rounded-xl"
           >
-            Logout
+            로그아웃
           </Button>
         </div>
       </header>
@@ -248,10 +248,10 @@ export default function KanbanPage() {
                 >
                   <h2 className="font-black text-xl mb-6 flex justify-between items-center text-gray-400 uppercase tracking-widest px-2">
                     {status === "todo"
-                      ? "To Do"
+                      ? "할 일"
                       : status === "doing"
-                        ? "In Progress"
-                        : "Done"}
+                        ? "진행 중"
+                        : "완료"}
                     <Badge
                       variant="outline"
                       className="text-indigo-400 border-indigo-400/30 bg-indigo-400/5 px-3 py-1"
