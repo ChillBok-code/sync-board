@@ -89,7 +89,7 @@ export default function KanbanPage() {
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
 
-    // 1. 예외 처리: 보드 밖으로 던지거나, 제자리에 놨을 때
+    // 예외 처리: 보드 밖으로 던지거나, 제자리에 놨을 때
     if (!destination) return;
     if (
       destination.droppableId === source.droppableId &&
@@ -100,24 +100,24 @@ export default function KanbanPage() {
     // [낙관적 업데이트] 기존 상태(State) 딥 카피(Deep Copy)
     const newTasks = [...tasks];
 
-    // 2. 추출 (Remove): 내가 잡은 카드를 전체 배열에서 뽑아냄
+    // 추출 (Remove): 내가 잡은 카드를 전체 배열에서 뽑아냄
     const taskIndex = newTasks.findIndex((t) => t.id === Number(draggableId));
     const movedTask = newTasks[taskIndex];
     newTasks.splice(taskIndex, 1); // 원래 자리에서 삭제
 
-    // 3. 상태 변경: 카드의 소속 컬럼(status) 업데이트
+    // 상태 변경: 카드의 소속 컬럼(status) 업데이트
     movedTask.status = destination.droppableId;
 
-    // 4. 삽입 (Insert): 목적지 컬럼의 배열을 따로 빼서 원하는 인덱스에 밀어 넣음
+    // 삽입 (Insert): 목적지 컬럼의 배열을 따로 빼서 원하는 인덱스에 밀어 넣음
     const destTasks = newTasks.filter(
       (t) => t.status === destination.droppableId,
     );
     destTasks.splice(destination.index, 0, movedTask);
 
-    // 5. 순서 재계산: 목적지 컬럼 내의 모든 카드들에게 0번부터 새 order 부여
+    // 순서 재계산: 목적지 컬럼 내의 모든 카드들에게 0번부터 새 order 부여
     const updatedDestTasks = destTasks.map((t, idx) => ({ ...t, order: idx }));
 
-    // 6. 배열 재조립 (Re-assemble): 안 건드린 타 컬럼 카드들 + 방금 재정렬한 목적지 컬럼 카드들 합체
+    // 배열 재조립 (Re-assemble): 안 건드린 타 컬럼 카드들 + 방금 재정렬한 목적지 컬럼 카드들 합체
     const otherTasks = newTasks.filter(
       (t) => t.status !== destination.droppableId,
     );
@@ -161,7 +161,7 @@ export default function KanbanPage() {
     }
   };
 
-  // 1. KanbanPage 컴포넌트 내부, handleAddTask 아래에 삭제 로직 추가
+  // KanbanPage 컴포넌트 내부, handleAddTask 아래에 삭제 로직 추가
   const handleDeleteTask = async (taskId: number) => {
     // [낙관적 업데이트] DB 응답을 기다리지 않고 화면의 상태(State)에서 즉시 제거
     const previousTasks = [...tasks];
@@ -186,7 +186,10 @@ export default function KanbanPage() {
   }
 
   return (
-    <div id="scroll-container" className="p-8 text-white font-sans">
+    <div
+      id="scroll-container"
+      className="p-8 text-white font-sans h-screen overflow-hidden flex flex-col"
+    >
       <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-gray-800 pb-8">
         <div className="flex justify-between items-center w-full md:w-auto">
           <div>
@@ -237,16 +240,18 @@ export default function KanbanPage() {
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pb-20">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pb-10 flex-1 overflow-hidden">
           {["todo", "doing", "done"].map((status) => (
             <Droppable droppableId={status} key={status}>
               {(provided) => (
                 <div
                   {...provided.droppableProps}
                   ref={provided.innerRef}
-                  className="bg-gray-800/30 p-6 rounded-3xl min-h-[600px] border border-gray-800/50"
+                  /* 컬럼의 전체 높이를 화면 하단에 딱 맞게 고정합니다 (flex-col 추가) */
+                  className="bg-gray-800/30 p-6 rounded-3xl h-[calc(100vh-240px)] flex flex-col border border-gray-800/50 shadow-inner"
                 >
-                  <h2 className="font-black text-xl mb-6 flex justify-between items-center text-gray-400 uppercase tracking-widest px-2">
+                  {/* 제목 영역: flex-shrink-0을 주어 스크롤 시에도 상단에 고정되게 합니다 */}
+                  <h2 className="font-black text-xl mb-6 flex justify-between items-center text-gray-400 uppercase tracking-widest px-2 shrink-0">
                     {status === "todo"
                       ? "할 일"
                       : status === "doing"
@@ -260,7 +265,8 @@ export default function KanbanPage() {
                     </Badge>
                   </h2>
 
-                  <div className="space-y-4">
+                  {/* 카드 리스트 영역: flex-1과 overflow-y-auto를 주어 여기만 스크롤되게 합니다 */}
+                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
                     {tasks
                       .filter((t) => t.status === status)
                       .map((task, index) => (
@@ -268,10 +274,23 @@ export default function KanbanPage() {
                           key={task.id}
                           task={task}
                           index={index}
-                          onDelete={handleDeleteTask} // 기존 삭제 로직 연결
-                          onRefresh={loadTasks} // 수정 후 목록 새로고침 로직 연결
+                          onDelete={handleDeleteTask}
+                          onRefresh={loadTasks}
                         />
                       ))}
+                    {/* [추가] Empty State: 해당 상태의 태스크가 0개일 때만 노출 */}
+                    {tasks.filter((t) => t.status === status).length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-gray-800/50 rounded-3xl bg-gray-900/20">
+                        <p className="text-gray-600 text-sm font-medium italic tracking-wide">
+                          {status === "todo" &&
+                            "새로운 도전 과제를 위에서 추가해 보세요."}
+                          {status === "doing" &&
+                            "현재 해결 중인 작업이 없습니다."}
+                          {status === "done" &&
+                            "완료된 태스크가 이곳에 기록됩니다."}
+                        </p>
+                      </div>
+                    )}
                     {provided.placeholder}
                   </div>
                 </div>
