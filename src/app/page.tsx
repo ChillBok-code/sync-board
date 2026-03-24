@@ -1,7 +1,7 @@
-"use client"; // 브라우저에서 실행 선언
+"use client";
 
+import { createTask, updateTasksOrder } from "@/app/action"; // updateTasksOrder 추가
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/client";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
@@ -18,30 +18,18 @@ interface Task {
 }
 
 export default function KanbanPage() {
-  const router = useRouter();
-
   const supabase = createClient();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [enabled, setEnabled] = useState(false); // 하이드레이션 미스매치 방어 패턴
+  const [enabled, setEnabled] = useState(false);
 
-  // 세션 무효화 (로그아웃) 핸들러
-  const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("로그아웃 실패:", error.message);
-      return;
-    }
-    router.push("/login");
-    router.refresh();
-  };
-
+  // 데이터 로드 함수
   const loadTasks = useCallback(async () => {
     const { data } = await supabase
       .from("tasks")
       .select("*")
-      .order("order", { ascending: true }); // useCallback 과 참조 안정성
+      .order("order", { ascending: true });
 
     if (data) {
       setTasks(data as Task[]);
@@ -54,25 +42,16 @@ export default function KanbanPage() {
       if (isMounted) setEnabled(true);
     });
 
-    const initialize = async () => {
-      await loadTasks();
-    };
+    loadTasks();
 
-    initialize();
-
-    // Supabase Realtime 구독 인스턴스 생성
+    // 실시간 구독 설정
     const channel = supabase
-      .channel("tasks-realtime") // 채널 고유 ID
+      .channel("tasks-realtime")
       .on(
         "postgres_changes",
-        {
-          event: "*", // INSERT, UPDATE, DELETE 모두 감지
-          schema: "public",
-          table: "tasks",
-        },
+        { event: "*", schema: "public", table: "tasks" },
         () => {
-          // 데이터 변경 감지 시 최신 목록 재요청(Re-fetching)
-          //void loadTasks();
+          loadTasks();
         },
       )
       .subscribe();
@@ -80,16 +59,14 @@ export default function KanbanPage() {
     return () => {
       isMounted = false;
       cancelAnimationFrame(animation);
-      // [중요] 구독 해제: 메모리 누수 및 좀비 인스턴스 방지, 클린업 함수 사용
       void supabase.removeChannel(channel);
     };
   }, [loadTasks, supabase]);
 
-  // 순서 정렬이 포함된 onDragEnd
+  // 드래그 앤 드롭 종료 시 실행
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
 
-    // 예외 처리: 보드 밖으로 던지거나, 제자리에 놨을 때
     if (!destination) return;
     if (
       destination.droppableId === source.droppableId &&
@@ -97,53 +74,44 @@ export default function KanbanPage() {
     )
       return;
 
-    // [낙관적 업데이트] 기존 상태(State) 딥 카피(Deep Copy)
+    // [낙관적 업데이트]
+    const previousTasks = [...tasks];
     const newTasks = [...tasks];
 
-    // 추출 (Remove): 내가 잡은 카드를 전체 배열에서 뽑아냄
     const taskIndex = newTasks.findIndex((t) => t.id === Number(draggableId));
-    const movedTask = newTasks[taskIndex];
-    newTasks.splice(taskIndex, 1); // 원래 자리에서 삭제
+    const movedTask = {
+      ...newTasks[taskIndex],
+      status: destination.droppableId,
+    };
+    newTasks.splice(taskIndex, 1);
 
-    // 상태 변경: 카드의 소속 컬럼(status) 업데이트
-    movedTask.status = destination.droppableId;
-
-    // 삽입 (Insert): 목적지 컬럼의 배열을 따로 빼서 원하는 인덱스에 밀어 넣음
     const destTasks = newTasks.filter(
       (t) => t.status === destination.droppableId,
     );
     destTasks.splice(destination.index, 0, movedTask);
 
-    // 순서 재계산: 목적지 컬럼 내의 모든 카드들에게 0번부터 새 order 부여
+    // 순서 재계산
     const updatedDestTasks = destTasks.map((t, idx) => ({ ...t, order: idx }));
-
-    // 배열 재조립 (Re-assemble): 안 건드린 타 컬럼 카드들 + 방금 재정렬한 목적지 컬럼 카드들 합체
     const otherTasks = newTasks.filter(
       (t) => t.status !== destination.droppableId,
     );
     const finalTasks = [...otherTasks, ...updatedDestTasks];
 
-    // 화면 즉시 렌더링
     setTasks(finalTasks);
 
-    // [영속성 레이어 동기화]
-    // 개별 Update 요청을 방지하기 위해 Bulk Upsert 방식을 채택 (네트워크 I/O 최적화)
+    // [보안 강화] 서버 액션을 통한 영속성 동기화
     try {
-      const { error } = await supabase.from("tasks").upsert(
-        updatedDestTasks.map((t) => ({
-          id: t.id,
-          title: t.title,
-          status: t.status,
-          order: t.order,
-          content: t.content,
-        })),
-        { onConflict: "id" },
-      );
+      const payload = updatedDestTasks.map((t) => ({
+        id: t.id,
+        status: t.status,
+        order: t.order,
+      }));
 
-      if (error) throw error;
+      const response = await updateTasksOrder(payload);
+      if (!response.success) throw new Error(response.error);
     } catch (error) {
-      console.error("순서 동기화 실패:", error);
-      setTasks(tasks); // 실패 시 롤백
+      console.error("동기화 실패:", error);
+      setTasks(previousTasks); // 롤백
     }
   };
 
@@ -151,122 +119,85 @@ export default function KanbanPage() {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
 
-    const { error } = await supabase
-      .from("tasks")
-      .insert([{ title: newTaskTitle, status: "todo", order: tasks.length }]);
-
-    if (!error) {
+    const result = await createTask(newTaskTitle);
+    if (result.success) {
       setNewTaskTitle("");
-      await loadTasks();
+    } else {
+      alert(result.error || "추가 실패");
     }
   };
 
-  // KanbanPage 컴포넌트 내부, handleAddTask 아래에 삭제 로직 추가
   const handleDeleteTask = async (taskId: number) => {
-    // [낙관적 업데이트] DB 응답을 기다리지 않고 화면의 상태(State)에서 즉시 제거
     const previousTasks = [...tasks];
     setTasks(tasks.filter((t) => t.id !== taskId));
 
-    // DB에서 해당 레코드 삭제
     const { error } = await supabase.from("tasks").delete().eq("id", taskId);
-
-    // 삭제 실패 시 원래 상태로 롤백
     if (error) {
-      console.error("삭제 실패:", error);
+      console.error("삭제 실패", error);
       setTasks(previousTasks);
     }
   };
 
   if (!enabled) {
     return (
-      <div className="p-8 min-h-screen bg-gray-900 text-white">
-        초기화 중...
+      <div className="p-8 min-h-screen bg-gray-900 flex items-center justify-center">
+        <p className="animate-pulse text-indigo-400 font-bold uppercase tracking-widest">
+          Syncing Board...
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      id="scroll-container"
-      className="p-8 text-white font-sans h-screen overflow-hidden flex flex-col"
-    >
-      <header className="mb-12 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-gray-800 pb-8">
-        <div className="flex justify-between items-center w-full md:w-auto">
-          <div>
-            <h1 className="text-4xl font-black tracking-tighter text-indigo-400 uppercase">
-              SYNC BOARD
-            </h1>
-            <p className="text-slate-400 mt-2 text-lg font-medium italic">
-              ChillBok-code&apos;s Workspace
-            </p>
-          </div>
-
-          <Button
-            variant="outline"
-            onClick={handleSignOut}
-            className="md:hidden border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
-          >
-            로그아웃
-          </Button>
+    <div className="p-6 md:p-10 text-white flex flex-col h-full max-w-7xl mx-auto">
+      <header className="mb-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-4xl font-black tracking-tighter text-indigo-500 uppercase">
+            Sync Board
+          </h1>
+          <p className="text-slate-500 text-sm font-medium ml-1">
+            Workspace Management
+          </p>
         </div>
 
-        <div className="flex items-center gap-4">
-          <form
-            onSubmit={handleAddTask}
-            className="flex gap-3 bg-gray-800 p-2 rounded-2xl border border-gray-700 shadow-2xl w-full md:w-auto"
-          >
-            <Input
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-              placeholder="무엇을 해야 하나요?"
-              className="bg-transparent border-none w-64 text-white focus-visible:ring-0 placeholder:text-gray-500"
-            />
-            <Button
-              type="submit"
-              className="bg-indigo-600 hover:bg-indigo-500 rounded-xl px-6 font-bold transition-all hover:scale-105 active:scale-95"
-            >
-              추가
-            </Button>
-          </form>
-
+        <form onSubmit={handleAddTask} className="flex gap-2 w-full md:w-auto">
+          <Input
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            placeholder="무엇을 해야 하나요?"
+            className="bg-slate-900/50 border-slate-800 text-white w-full md:w-64 h-11 rounded-xl focus-visible:ring-indigo-500"
+          />
           <Button
-            variant="outline"
-            onClick={handleSignOut}
-            className="hidden md:block border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white h-full px-6 rounded-xl"
+            type="submit"
+            className="bg-indigo-600 hover:bg-indigo-500 font-bold h-11 px-6 rounded-xl transition-all active:scale-95 shrink-0"
           >
-            로그아웃
+            추가
           </Button>
-        </div>
+        </form>
       </header>
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 pb-10 flex-1 overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0">
           {["todo", "doing", "done"].map((status) => (
             <Droppable droppableId={status} key={status}>
               {(provided) => (
                 <div
                   {...provided.droppableProps}
                   ref={provided.innerRef}
-                  /* 컬럼의 전체 높이를 화면 하단에 딱 맞게 고정합니다 (flex-col 추가) */
-                  className="bg-gray-800/30 p-6 rounded-3xl h-[calc(100vh-240px)] flex flex-col border border-gray-800/50 shadow-inner"
+                  className="bg-slate-900/40 p-5 rounded-3xl flex flex-col border border-slate-800/50 min-h-125"
                 >
-                  {/* 제목 영역: flex-shrink-0을 주어 스크롤 시에도 상단에 고정되게 합니다 */}
-                  <h2 className="font-black text-xl mb-6 flex justify-between items-center text-gray-400 uppercase tracking-widest px-2 shrink-0">
+                  <h2 className="font-bold text-sm mb-5 flex justify-between items-center text-slate-500 uppercase tracking-[0.2em] px-2">
                     {status === "todo"
-                      ? "할 일"
+                      ? "To Do"
                       : status === "doing"
-                        ? "진행 중"
-                        : "완료"}
-                    <Badge
-                      variant="outline"
-                      className="text-indigo-400 border-indigo-400/30 bg-indigo-400/5 px-3 py-1"
-                    >
+                        ? "In Progress"
+                        : "Done"}
+                    <Badge className="bg-indigo-500/10 text-indigo-400 border-none px-2.5 py-0.5 rounded-full">
                       {tasks.filter((t) => t.status === status).length}
                     </Badge>
                   </h2>
 
-                  {/* 카드 리스트 영역: flex-1과 overflow-y-auto를 주어 여기만 스크롤되게 합니다 */}
-                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
+                  <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
                     {tasks
                       .filter((t) => t.status === status)
                       .map((task, index) => (
@@ -278,19 +209,6 @@ export default function KanbanPage() {
                           onRefresh={loadTasks}
                         />
                       ))}
-                    {/* [추가] Empty State: 해당 상태의 태스크가 0개일 때만 노출 */}
-                    {tasks.filter((t) => t.status === status).length === 0 && (
-                      <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-gray-800/50 rounded-3xl bg-gray-900/20">
-                        <p className="text-gray-600 text-sm font-medium italic tracking-wide">
-                          {status === "todo" &&
-                            "새로운 도전 과제를 위에서 추가해 보세요."}
-                          {status === "doing" &&
-                            "현재 해결 중인 작업이 없습니다."}
-                          {status === "done" &&
-                            "완료된 태스크가 이곳에 기록됩니다."}
-                        </p>
-                      </div>
-                    )}
                     {provided.placeholder}
                   </div>
                 </div>

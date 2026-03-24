@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/shared/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import {
@@ -11,10 +11,10 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import { Loader2 } from "lucide-react"; // 로딩 아이콘
 
 const COLORS = ["#818CF8", "#FBBF24", "#10B981"];
 
-// Task 인터페이스 정의 (타입 안정성 확보)
 interface Task {
   id: string;
   title: string;
@@ -25,71 +25,114 @@ interface Task {
 export default function DashboardPage() {
   const [stats, setStats] = useState<{ name: string; value: number }[]>([]);
   const [totalTasks, setTotalTasks] = useState(0);
-  const [recentTasks, setRecentTasks] = useState<Task[]>([]); // 최근 할 일 상태 추가
+  const [recentTasks, setRecentTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true); // 로딩 상태 추가
+
   const supabase = createClient();
 
-  useEffect(() => {
-    let isMounted = true;
-    const loadData = async () => {
-      // 통계용 전체 데이터와 최근 작업 20개를 병렬로 가져옵니다
-      const [statsRes, recentRes] = await Promise.all([
-        supabase.from("tasks").select("status"),
-        supabase
-          .from("tasks")
-          .select("id, title, status, created_at")
-          .order("created_at", { ascending: false }) // 최신순 정렬
-          .limit(20), // 20개만 제한
-      ]);
+  // 데이터를 불러오는 로직을 useCallback으로 분리 (재사용 및 Realtime용)
+  const loadData = useCallback(async () => {
+    const [statsRes, recentRes] = await Promise.all([
+      supabase.from("tasks").select("status"),
+      supabase
+        .from("tasks")
+        .select("id, title, status, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
 
-      if (statsRes.error || recentRes.error) return;
+    if (statsRes.error || recentRes.error) {
+      console.error("데이터 로드 실패");
+      return;
+    }
 
-      if (isMounted) {
-        // 통계 계산
-        const counts = statsRes.data.reduce<Record<string, number>>(
-          (acc, task) => {
-            acc[task.status] = (acc[task.status] || 0) + 1;
-            return acc;
-          },
-          {},
-        );
+    // 데이터 가공
+    const rawData = statsRes.data || [];
+    const counts: Record<string, number> = { todo: 0, doing: 0, done: 0 };
 
-        setTotalTasks(statsRes.data.length);
-        setStats([
-          { name: "할 일", value: counts.todo || 0 },
-          { name: "진행 중", value: counts.doing || 0 },
-          { name: "완료", value: counts.done || 0 },
-        ]);
-
-        // 최근 작업 업데이트
-        setRecentTasks(recentRes.data as Task[]);
+    rawData.forEach((task) => {
+      if (counts[task.status] !== undefined) {
+        counts[task.status]++;
       }
-    };
+    });
 
-    loadData();
-    return () => {
-      isMounted = false;
-    };
+    setTotalTasks(rawData.length);
+    setStats([
+      { name: "할 일", value: counts.todo },
+      { name: "진행 중", value: counts.doing },
+      { name: "완료", value: counts.done },
+    ]);
+    setRecentTasks((recentRes.data as Task[]) || []);
+    setIsLoading(false);
   }, [supabase]);
 
-  // 상태별 뱃지 색상 매핑
+  useEffect(() => {
+    // 해결 방법: 비동기 함수를 생성하고 즉시 호출하여
+    // Effect 본문과의 동기적 실행 연결고리를 끊어줍니다.
+    const initialize = async () => {
+      await loadData();
+    };
+
+    initialize();
+
+    // 대시보드 실시간 업데이트 활성화
+    const channel = supabase
+      .channel("dashboard-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tasks" },
+        () => {
+          loadData();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadData, supabase]);
+
   const getStatusColor = (status: string) => {
-    if (status === "todo") return "bg-indigo-500/20 text-indigo-400";
-    if (status === "doing") return "bg-amber-500/20 text-amber-400";
-    return "bg-emerald-500/20 text-emerald-400";
+    const colors = {
+      todo: "bg-indigo-500/20 text-indigo-400",
+      doing: "bg-amber-500/20 text-amber-400",
+      done: "bg-emerald-500/20 text-emerald-400",
+    };
+    return (
+      colors[status as keyof typeof colors] || "bg-gray-500/20 text-gray-400"
+    );
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-8 min-h-screen bg-[#0f172a] text-white flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-indigo-500" />
+        <p className="text-slate-400 font-bold animate-pulse">
+          데이터 분석 중...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 min-h-screen bg-[#0f172a] text-white">
-      <h1 className="text-4xl font-black mb-10 text-indigo-400 uppercase tracking-tighter">
-        할 일 한눈에
-      </h1>
+      <header className="flex justify-between items-end mb-10">
+        <div>
+          <h1 className="text-4xl font-black text-indigo-400 uppercase tracking-tighter">
+            할 일 한눈에
+          </h1>
+          <p className="text-slate-500 text-sm mt-1 font-medium">
+            실시간 업무 현황 통계
+          </p>
+        </div>
+      </header>
 
-      {/* 요약 카드 그리드 */}
+      {/* 상단 요약 카드 그리드 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         {stats.map((item, index) => (
           <div
             key={item.name}
-            className="bg-gray-800/40 border border-gray-700/50 p-6 rounded-3xl shadow-xl"
+            className="bg-gray-800/40 border border-gray-700/50 p-6 rounded-3xl shadow-xl transition-transform hover:scale-[1.02]"
           >
             <p className="text-gray-400 font-bold text-xs uppercase tracking-widest mb-2">
               {item.name}
@@ -108,8 +151,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* 업무 분포도 (도넛 차트) */}
-        <Card className="bg-gray-800/40 border-gray-700/50 rounded-3xl overflow-hidden shadow-2xl">
+        {/* 도넛 차트 카드 */}
+        <Card className="bg-gray-800/40 border-gray-700/50 rounded-3xl overflow-hidden shadow-2xl border-none">
           <CardHeader>
             <CardTitle className="text-slate-100 text-2xl font-black">
               업무 분포도
@@ -126,7 +169,7 @@ export default function DashboardPage() {
                   dataKey="value"
                   stroke="none"
                 >
-                  {stats.map((entry, index) => (
+                  {stats.map((_, index) => (
                     <Cell
                       key={`cell-${index}`}
                       fill={COLORS[index % COLORS.length]}
@@ -138,6 +181,7 @@ export default function DashboardPage() {
                     backgroundColor: "#1e293b",
                     border: "none",
                     borderRadius: "12px",
+                    color: "#fff",
                   }}
                 />
                 <Legend
@@ -162,36 +206,34 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* 최근 등록된 할 일 리스트 */}
-        <Card className="bg-gray-800/40 border-gray-700/50 rounded-3xl overflow-hidden shadow-2xl">
+        {/* 최근 리스트 카드 */}
+        <Card className="bg-gray-800/40 border-gray-700/50 rounded-3xl overflow-hidden shadow-2xl border-none">
           <CardHeader>
             <CardTitle className="text-slate-100 text-2xl font-black flex justify-between items-center">
-              최근 등록된 할 일
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-widest text-right">
-                최근 등록순
+              최근 활동
+              <span className="text-[10px] font-medium text-slate-500 uppercase tracking-widest">
+                Recent 20
               </span>
             </CardTitle>
           </CardHeader>
-          {/* UI 수정 사항 적용 */}
           <CardContent className="h-100 overflow-y-auto pr-2 custom-scrollbar">
-            <div className="space-y-4">
+            <div className="space-y-3">
               {recentTasks.length > 0 ? (
                 recentTasks.map((task) => (
                   <div
                     key={task.id}
-                    className="group flex items-center justify-between p-4 rounded-2xl bg-gray-900/50 border border-gray-700/30 transition-all hover:border-indigo-500/50 hover:bg-gray-900/80"
+                    className="group flex items-center justify-between p-4 rounded-2xl bg-gray-900/40 border border-gray-700/20 hover:border-indigo-500/30 transition-all"
                   >
                     <div className="flex flex-col gap-1">
                       <span className="text-slate-200 font-bold group-hover:text-indigo-300 transition-colors line-clamp-1">
                         {task.title}
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium uppercase tracking-tighter">
-                        {new Date(task.created_at).toLocaleDateString()} 에
-                        추가됨
+                      <span className="text-[10px] text-slate-500">
+                        {new Date(task.created_at).toLocaleString()}
                       </span>
                     </div>
                     <span
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${getStatusColor(task.status)}`}
+                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${getStatusColor(task.status)}`}
                     >
                       {task.status === "todo"
                         ? "할 일"
@@ -202,11 +244,8 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500">
-                  <p className="font-bold">등록된 할 일이 없습니다.</p>
-                  <p className="text-sm">
-                    보드에서 새로운 작업을 추가해 보세요!
-                  </p>
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 py-20">
+                  <p className="font-bold">데이터가 존재하지 않습니다.</p>
                 </div>
               )}
             </div>
