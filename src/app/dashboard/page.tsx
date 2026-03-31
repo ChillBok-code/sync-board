@@ -165,7 +165,9 @@ export default function DashboardPage() {
                   data={stats}
                   innerRadius={80}
                   outerRadius={110}
-                  paddingAngle={8}
+                  paddingAngle={0} // 1. 빈칸 제거 (0으로 설정)
+                  startAngle={90} // 2. 시작점을 12시 방향(90도)으로 설정
+                  endAngle={-270} // 3. 시계 방향으로 한 바퀴 돌도록 설정
                   dataKey="value"
                   stroke="none"
                 >
@@ -233,7 +235,7 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     <span
-                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${getStatusColor(task.status)}`}
+                      className={`px-3 py-1 rounded-full text-[10px] font-black uppercase whitespace-nowrap shrink-0 ${getStatusColor(task.status)}`}
                     >
                       {task.status === "todo"
                         ? "할 일"
