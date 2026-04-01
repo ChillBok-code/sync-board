@@ -1,13 +1,12 @@
 "use client";
 
-import { createTask, updateTasksOrder } from "@/app/action"; // updateTasksOrder 추가
+import { createTask, updateTasksOrder } from "@/app/action";
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/shared/lib/supabase/client";
-import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
-import { DragDropContext, Droppable, DropResult } from "@hello-pangea/dnd";
-import TaskCard from "@/app/components/TaskCard";
+import { DragDropContext, DropResult } from "@hello-pangea/dnd";
+import TaskColumn from "@/app/components/TaskColumn";
 
 interface Task {
   id: number;
@@ -17,23 +16,24 @@ interface Task {
   order: number;
 }
 
-export default function KanbanPage() {
-  const supabase = createClient();
+const COLUMNS = [
+  { status: "todo", title: "To Do" },
+  { status: "doing", title: "In Progress" },
+  { status: "done", title: "Done" },
+];
 
+export default function BoardPage() {
+  const supabase = createClient();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [enabled, setEnabled] = useState(false);
 
-  // 데이터 로드 함수
   const loadTasks = useCallback(async () => {
     const { data } = await supabase
       .from("tasks")
       .select("*")
       .order("order", { ascending: true });
-
-    if (data) {
-      setTasks(data as Task[]);
-    }
+    if (data) setTasks(data as Task[]);
   }, [supabase]);
 
   useEffect(() => {
@@ -41,10 +41,8 @@ export default function KanbanPage() {
     const animation = requestAnimationFrame(() => {
       if (isMounted) setEnabled(true);
     });
-
     loadTasks();
 
-    // 실시간 구독 설정
     const channel = supabase
       .channel("tasks-realtime")
       .on(
@@ -63,10 +61,8 @@ export default function KanbanPage() {
     };
   }, [loadTasks, supabase]);
 
-  // 드래그 앤 드롭 종료 시 실행
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
-
     if (!destination) return;
     if (
       destination.droppableId === source.droppableId &&
@@ -74,11 +70,10 @@ export default function KanbanPage() {
     )
       return;
 
-    // [낙관적 업데이트]
     const previousTasks = [...tasks];
     const newTasks = [...tasks];
-
     const taskIndex = newTasks.findIndex((t) => t.id === Number(draggableId));
+
     const movedTask = {
       ...newTasks[taskIndex],
       status: destination.droppableId,
@@ -90,7 +85,6 @@ export default function KanbanPage() {
     );
     destTasks.splice(destination.index, 0, movedTask);
 
-    // 순서 재계산
     const updatedDestTasks = destTasks.map((t, idx) => ({ ...t, order: idx }));
     const otherTasks = newTasks.filter(
       (t) => t.status !== destination.droppableId,
@@ -99,46 +93,35 @@ export default function KanbanPage() {
 
     setTasks(finalTasks);
 
-    // [보안 강화] 서버 액션을 통한 영속성 동기화
     try {
       const payload = updatedDestTasks.map((t) => ({
         id: t.id,
         status: t.status,
         order: t.order,
       }));
-
       const response = await updateTasksOrder(payload);
       if (!response.success) throw new Error(response.error);
     } catch (error) {
-      console.error("동기화 실패:", error);
-      setTasks(previousTasks); // 롤백
+      console.error("Sync failed:", error);
+      setTasks(previousTasks);
     }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
-
     const result = await createTask(newTaskTitle);
-    if (result.success) {
-      setNewTaskTitle("");
-    } else {
-      alert(result.error || "추가 실패");
-    }
+    if (result.success) setNewTaskTitle("");
   };
 
   const handleDeleteTask = async (taskId: number) => {
     const previousTasks = [...tasks];
     setTasks(tasks.filter((t) => t.id !== taskId));
-
     const { error } = await supabase.from("tasks").delete().eq("id", taskId);
-    if (error) {
-      console.error("삭제 실패", error);
-      setTasks(previousTasks);
-    }
+    if (error) setTasks(previousTasks);
   };
 
-  if (!enabled) {
+  if (!enabled)
     return (
       <div className="p-8 min-h-screen bg-gray-900 flex items-center justify-center">
         <p className="animate-pulse text-indigo-400 font-bold uppercase tracking-widest">
@@ -146,7 +129,6 @@ export default function KanbanPage() {
         </p>
       </div>
     );
-  }
 
   return (
     <div className="p-6 md:p-10 text-white flex flex-col h-full max-w-7xl mx-auto">
@@ -159,17 +141,16 @@ export default function KanbanPage() {
             Workspace Management
           </p>
         </div>
-
         <form onSubmit={handleAddTask} className="flex gap-2 w-full md:w-auto">
           <Input
             value={newTaskTitle}
             onChange={(e) => setNewTaskTitle(e.target.value)}
-            placeholder="무엇을 해야 하나요?"
+            placeholder="새로운 할 일을 입력하세요"
             className="bg-slate-900/50 border-slate-800 text-white w-full md:w-64 h-11 rounded-xl focus-visible:ring-indigo-500"
           />
           <Button
             type="submit"
-            className="bg-indigo-600 hover:bg-indigo-500 font-bold h-11 px-6 rounded-xl transition-all active:scale-95 shrink-0"
+            className="bg-indigo-600 hover:bg-indigo-500 font-bold h-11 px-6 rounded-xl transition-all active:scale-95"
           >
             추가
           </Button>
@@ -178,42 +159,15 @@ export default function KanbanPage() {
 
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0">
-          {["todo", "doing", "done"].map((status) => (
-            <Droppable droppableId={status} key={status}>
-              {(provided) => (
-                <div
-                  {...provided.droppableProps}
-                  ref={provided.innerRef}
-                  className="bg-slate-900/40 p-5 rounded-3xl flex flex-col border border-slate-800/50 min-h-125"
-                >
-                  <h2 className="font-bold text-sm mb-5 flex justify-between items-center text-slate-500 uppercase tracking-[0.2em] px-2">
-                    {status === "todo"
-                      ? "To Do"
-                      : status === "doing"
-                        ? "In Progress"
-                        : "Done"}
-                    <Badge className="bg-indigo-500/10 text-indigo-400 border-none px-2.5 py-0.5 rounded-full">
-                      {tasks.filter((t) => t.status === status).length}
-                    </Badge>
-                  </h2>
-
-                  <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
-                    {tasks
-                      .filter((t) => t.status === status)
-                      .map((task, index) => (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          index={index}
-                          onDelete={handleDeleteTask}
-                          onRefresh={loadTasks}
-                        />
-                      ))}
-                    {provided.placeholder}
-                  </div>
-                </div>
-              )}
-            </Droppable>
+          {COLUMNS.map((col) => (
+            <TaskColumn
+              key={col.status}
+              status={col.status}
+              title={col.title}
+              tasks={tasks}
+              onDelete={handleDeleteTask}
+              onRefresh={loadTasks}
+            />
           ))}
         </div>
       </DragDropContext>
