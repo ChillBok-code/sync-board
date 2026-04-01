@@ -10,7 +10,7 @@ interface Task {
   order: number;
 }
 
-interface BoardColumnProps {
+interface TaskColumnProps {
   status: string;
   title: string;
   tasks: Task[];
@@ -18,13 +18,13 @@ interface BoardColumnProps {
   onRefresh: () => void;
 }
 
-export default function BoardColumn({
+export default function TaskColumn({
   status,
   title,
   tasks,
   onDelete,
   onRefresh,
-}: BoardColumnProps) {
+}: TaskColumnProps) {
   const columnTasks = tasks.filter((t) => t.status === status);
 
   return (
