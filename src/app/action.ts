@@ -1,89 +1,110 @@
 "use server";
 
-import { createClient } from "@/shared/lib/supabase/server";
 import { revalidatePath } from "next/cache";
+import { createClient } from "@/shared/lib/supabase/server";
+import type { DashboardTask } from "@/app/dashboard/types";
 
-/**
- * 공통 유저 인증 확인 함수
- * 내부에서만 사용하며, 인증 실패 시 에러를 던집니다.
- */
-async function getAuthenticatedUser() {
+export interface StatusCount {
+  status: "todo" | "doing" | "done";
+  count: number;
+}
+export interface DailyTrend {
+  date: string;
+  count: number;
+}
+
+// 대시보드 전체 데이터 조회
+export async function getDashboardData() {
+  const supabase = await createClient();
+  const [statusRes, trendRes, recentRes] = await Promise.all([
+    supabase.rpc("get_status_counts"),
+    supabase.rpc("get_daily_trend", { days_limit: 7 }),
+    supabase
+      .from("tasks")
+      .select("id, title, status, created_at, content, due_date")
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+
+  if (statusRes.error || trendRes.error || recentRes.error) {
+    throw new Error("DB_ERROR");
+  }
+
+  return {
+    statusCounts: (statusRes.data || []) as StatusCount[],
+    dailyTrend: (trendRes.data || []).map(
+      (row: { date_iso: string; count: string | number }) => ({
+        date: row.date_iso,
+        count: Number(row.count),
+      }),
+    ),
+    recentTasks: (recentRes.data || []) as DashboardTask[],
+  };
+}
+
+// 할 일 생성 (FormData 매핑)
+export async function addAction(formData: FormData) {
+  const title = formData.get("title") as string;
+  const due_date = formData.get("due_date") as string | null;
+  return createTask(title, due_date);
+}
+
+// 공통 할 일 생성 로직
+export async function createTask(title: string, dueDate?: string | null) {
   const supabase = await createClient();
   const {
     data: { user },
+    error: authError,
   } = await supabase.auth.getUser();
+  if (authError || !user) return { success: false, error: "AUTH_REQUIRED" };
 
-  if (!user) {
-    throw new Error("로그인이 필요합니다.");
-  }
-
-  return { supabase, user };
-}
-
-/**
- * 신규 할 일 생성 액션
- */
-export async function createTask(title: string) {
-  try {
-    const { supabase, user } = await getAuthenticatedUser();
-
-    const { data, error } = await supabase
-      .from("tasks")
-      .insert([
-        {
-          title,
-          user_id: user.id,
-          status: "todo",
-          order: 0,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    revalidatePath("/");
-    return { success: true, data };
-  } catch (error: unknown) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "알 수 없는 에러 발생",
-    };
-  }
-}
-
-/**
- * 태스크 순서 및 상태 일괄 업데이트 (드래그 앤 드롭용)
- * Unexpected any 방지를 위해 정확한 타입을 지정합니다.
- */
-interface UpdateTaskParams {
-  id: number;
-  status: string;
-  order: number;
-}
-
-export async function updateTasksOrder(updatedTasks: UpdateTaskParams[]) {
-  try {
-    const { supabase, user } = await getAuthenticatedUser();
-
-    // 보안 강화: 업데이트할 데이터에 서버에서 확인한 user_id를 강제로 매핑
-    const payload = updatedTasks.map((task) => ({
-      ...task,
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      title,
+      status: "todo",
       user_id: user.id,
-    }));
+      order: 0,
+      due_date: dueDate || null,
+    })
+    .select()
+    .single();
 
+  if (error) return { success: false, error: "INSERT_FAILED" };
+
+  revalidatePath("/");
+  revalidatePath("/dashboard");
+  return { success: true, data };
+}
+
+// 순서 및 상태 업데이트 (D&D용)
+export async function updateTasksOrder(
+  updatedTasks: { id: number; status: string; order: number }[],
+) {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("로그인 필요");
+
+    const payload = updatedTasks.map((task) => ({ ...task, user_id: user.id }));
     const { error } = await supabase
       .from("tasks")
       .upsert(payload, { onConflict: "id" });
-
     if (error) throw error;
 
-    revalidatePath("/"); // 메인 페이지와 대시보드 데이터 갱신
+    revalidatePath("/");
+    revalidatePath("/dashboard");
     return { success: true };
   } catch (error: unknown) {
+    // [수정] any 대신 unknown 사용
     return {
       success: false,
-      error: error instanceof Error ? error.message : "순서 업데이트 실패",
+      error:
+        error instanceof Error
+          ? error.message
+          : "업데이트 중 오류가 발생했습니다.",
     };
   }
 }
