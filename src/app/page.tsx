@@ -7,6 +7,7 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { DragDropContext, DropResult } from "@hello-pangea/dnd";
 import TaskColumn from "@/app/components/TaskColumn";
+import { SubTask } from "@/shared/types";
 
 interface Task {
   id: number;
@@ -14,6 +15,8 @@ interface Task {
   content: string | null;
   status: string;
   order: number;
+  due_date?: string | null;
+  sub_tasks?: SubTask[];
 }
 
 const COLUMNS = [
@@ -28,10 +31,11 @@ export default function BoardPage() {
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [enabled, setEnabled] = useState(false);
 
+  // 초기 데이터 로드 (최초 1회 및 명시적 새로고침 시에만 사용)
   const loadTasks = useCallback(async () => {
     const { data } = await supabase
       .from("tasks")
-      .select("*")
+      .select("*, sub_tasks(*)")
       .order("order", { ascending: true });
     if (data) setTasks(data as Task[]);
   }, [supabase]);
@@ -41,15 +45,49 @@ export default function BoardPage() {
     const animation = requestAnimationFrame(() => {
       if (isMounted) setEnabled(true);
     });
+
+    // 처음에만 전체 데이터를 불러옵니다.
     loadTasks();
 
+    // [Unit 4.3] 실시간 부분 패칭(Patching) 도입
     const channel = supabase
       .channel("tasks-realtime")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "tasks" },
-        () => {
-          loadTasks();
+        (payload) => {
+          // 서버에서 전체 데이터를 다시 불러오지 않고, 클라이언트 상태만 직접 수정합니다.
+          setTasks((currentTasks) => {
+            // 1. 새로운 할 일이 추가된 경우 (INSERT)
+            if (payload.eventType === "INSERT") {
+              // 이미 존재하는 데이터인지 확인 (중복 방지)
+              if (currentTasks.some((t) => t.id === payload.new.id))
+                return currentTasks;
+
+              // [수정 포인트] payload.new가 Task 타입의 모든 속성을 가지고 있음을 TS에 명확히 알려줍니다.
+              const newTask = payload.new as unknown as Task;
+              return [...currentTasks, { ...newTask, sub_tasks: [] }];
+            }
+
+            // 2. 할 일이 수정/이동된 경우 (UPDATE)
+            if (payload.eventType === "UPDATE") {
+              const updatedTask = payload.new as unknown as Task; // 여기도 추가
+              return currentTasks
+                .map((t) =>
+                  t.id === updatedTask.id
+                    ? { ...t, ...updatedTask, sub_tasks: t.sub_tasks }
+                    : t,
+                )
+                .sort((a, b) => a.order - b.order);
+            }
+
+            // 3. 할 일이 삭제된 경우 (DELETE)
+            if (payload.eventType === "DELETE") {
+              return currentTasks.filter((t) => t.id !== payload.old.id);
+            }
+
+            return currentTasks;
+          });
         },
       )
       .subscribe();
@@ -91,6 +129,7 @@ export default function BoardPage() {
     );
     const finalTasks = [...otherTasks, ...updatedDestTasks];
 
+    // [낙관적 업데이트] 화면 먼저 변경
     setTasks(finalTasks);
 
     try {
@@ -99,19 +138,28 @@ export default function BoardPage() {
         status: t.status,
         order: t.order,
       }));
+      // action.ts의 revalidatePath가 제거되었으므로 서버만 조용히 갱신됨
       const response = await updateTasksOrder(payload);
       if (!response.success) throw new Error(response.error);
     } catch (error) {
       console.error("Sync failed:", error);
-      setTasks(previousTasks);
+      setTasks(previousTasks); // 실패 시 롤백
     }
   };
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
-    const result = await createTask(newTaskTitle);
-    if (result.success) setNewTaskTitle("");
+
+    // 추가 후 결과 처리를 기다리지 않고 입력창 즉시 비우기 (체감 속도 증가)
+    const titleToSave = newTaskTitle;
+    setNewTaskTitle("");
+
+    const result = await createTask(titleToSave);
+    if (!result.success) {
+      setNewTaskTitle(titleToSave); // 실패 시 입력창 롤백
+      alert("할 일 추가에 실패했습니다.");
+    }
   };
 
   const handleDeleteTask = async (taskId: number) => {
@@ -124,9 +172,12 @@ export default function BoardPage() {
   if (!enabled)
     return (
       <div className="p-8 min-h-screen bg-gray-900 flex items-center justify-center">
-        <p className="animate-pulse text-indigo-400 font-bold uppercase tracking-widest">
-          Syncing Board...
-        </p>
+        {/* [Unit 4.4] 레이아웃 시프트를 막기 위한 임시 스켈레톤/스피너 크기 고정 */}
+        <div className="w-full h-[80vh] flex flex-col items-center justify-center">
+          <p className="animate-pulse text-indigo-400 font-bold uppercase tracking-widest">
+            Syncing Board...
+          </p>
+        </div>
       </div>
     );
 

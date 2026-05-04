@@ -1,3 +1,11 @@
+export interface SubTask {
+  id: string;
+  task_id: string;
+  title: string;
+  is_completed: boolean;
+  created_at: string;
+}
+
 export interface Task {
   id: number;
   title: string;
@@ -5,6 +13,7 @@ export interface Task {
   order: number;
   user_id: string;
   created_at: string;
-  content?: string | null; // [Task G] 메모 본문
-  due_date?: string | null; // [Task H] 마감 기한
+  content?: string | null;
+  due_date?: string | null;
+  sub_tasks?: SubTask[];
 }

@@ -47,7 +47,11 @@ export default function RecentActivity({ tasks }: { tasks: DashboardTask[] }) {
                 </p>
               )}
               <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-slate-600">
+                {/* [수정 완료] 여기에 suppressHydrationWarning 속성을 추가했습니다. */}
+                <span
+                  suppressHydrationWarning
+                  className="text-[10px] text-slate-600"
+                >
                   {new Date(task.created_at).toLocaleString()}
                 </span>
                 {task.due_date && (

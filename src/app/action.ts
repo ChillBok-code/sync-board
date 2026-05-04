@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+// [긴급 수정] 스크롤 점프의 원인이 되는 revalidatePath는 더 이상 사용하지 않으므로 제거(또는 주석 처리)합니다.
+// import { revalidatePath } from "next/cache";
 import { createClient } from "@/shared/lib/supabase/server";
 import type { DashboardTask } from "@/app/dashboard/types";
 
@@ -21,7 +22,7 @@ export async function getDashboardData() {
     supabase.rpc("get_daily_trend", { days_limit: 7 }),
     supabase
       .from("tasks")
-      .select("id, title, status, created_at, content, due_date")
+      .select("id, title, status, created_at, content, due_date, sub_tasks(*)")
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
@@ -72,8 +73,10 @@ export async function createTask(title: string, dueDate?: string | null) {
 
   if (error) return { success: false, error: "INSERT_FAILED" };
 
-  revalidatePath("/");
-  revalidatePath("/dashboard");
+  // [Unit 4.1] 전체 페이지 새로고침을 유발하는 코드 제거
+  // revalidatePath("/");
+  // revalidatePath("/dashboard");
+
   return { success: true, data };
 }
 
@@ -94,11 +97,12 @@ export async function updateTasksOrder(
       .upsert(payload, { onConflict: "id" });
     if (error) throw error;
 
-    revalidatePath("/");
-    revalidatePath("/dashboard");
+    // [Unit 4.1] 전체 페이지 새로고침을 유발하는 코드 제거
+    // revalidatePath("/");
+    // revalidatePath("/dashboard");
+
     return { success: true };
   } catch (error: unknown) {
-    // [수정] any 대신 unknown 사용
     return {
       success: false,
       error:
