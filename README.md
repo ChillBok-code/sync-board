@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# sync-board (웹 기반 업무 및 태스크 관리 플랫폼)
 
-## Getting Started
+> **"Next.js와 TypeScript를 활용하여 복잡한 태스크 상태 관리와 데이터 시각화를 정교하게 구현한 1인 풀스택 개발 프로젝트입니다."**
 
-First, run the development server:
+- **개발 기간**: 2026.01 ~ 현재 진행 중 (지속적인 기능 고도화 중)
+- **개발 인원**: 1인 (기획, 데이터 모델링, UI/UX 설계, 프론트엔드 구현)
+- **배포 링크**: 🔗 [https://sync-board-sand.vercel.app/]
+- **테스트 계정**: 아이디: `test@example.com` / 비밀번호: `123456`
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+---
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Frontend**: Next.js (App Router), TypeScript, React, Tailwind CSS
+- **Database & Auth**: Supabase (PostgreSQL)
+- **Deployment**: Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 핵심 기획 및 구현 기능
 
-To learn more about Next.js, take a look at the following resources:
+### 1. 생산성을 극대화하는 칸반 보드 (Kanban Board)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- 업무의 효율적인 진행 흐름(To-Do, In Progress, Done)을 시각적으로 트래킹할 수 있는 인터페이스 설계
+- 컴포넌트 단위의 유연한 상태 관리를 통해 직관적이고 끊김 없는 사용자 경험(UX) 제공
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 2. 세부 작업 관리를 위한 하위 작업(Sub-task) 아키텍처
 
-## Deploy on Vercel
+- 상위 태스크의 복잡도를 낮추기 위해 하위 작업을 분할하고 진행 상태를 유기적으로 연결
+- **데이터 무결성 확보**: 데이터베이스 단에서 외래키(Foreign Key)와 `CASCADE` 정책을 적용하여, 상위 태스크 삭제 시 연동된 하위 항목들이 안전하게 자동 정리되도록 설계
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 3. 실시간 유저 활동 피드 (Recent Activity)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- 플랫폼 내에서 발생하는 주요 활동 이력을 투명하게 시각화하는 히스토리 모듈 기획
+- 사용자가 본인의 업무 흐름과 실시간 변경 사항을 직관적으로 추적할 수 있도록 UI/UX 배치
+
+### 4. 데이터 기반 대시보드 시각화 (Dashboard Analytics)
+
+- 프로젝트 전체의 진행 상황을 한눈에 파악할 수 있는 데이터 시각화 컴포넌트 구현
+- 현재 상태별 수치(Stats), 진행률 차트(StatusChart), 트렌드 변화(TrendChart) 데이터를 유기적으로 가공하여 대시보드 화면에 적재
+
+---
+
+## 문제 해결 및 성장 경험 (Troubleshooting)
+
+### 대시보드 일별 통계의 타임존(Timezone) 무결성 해결
+
+- **문제 상황**: 글로벌 클라우드 베이스의 Supabase 특성상 기본 시간대가 UTC 기준으로 잡혀 있어, 한국 시간(KST) 기준으로 밤 12시 전후에 등록된 태스크들이 대시보드 일별 트렌드 차트에서 날짜가 밀려 적재되는 현상 발견.
+- **해결 방법**: 애플리케이션 단에서 데이터를 복잡하게 가공하는 대신, 데이터베이스 단에서 한국 표준시(`Asia/Seoul`) 기준의 타임존 변환 작업을 처리하는 **통계 RPC 함수(SQL)를 직접 정의**하여 해결. 이를 통해 프론트엔드와 데이터 레이어 간의 통신 비용을 최소화하고 완벽한 데이터 시각화 무결성을 확보함.
+
+### Supabase 보안 및 유저 데이터 독립성 확보
+
+- **문제 상황**: 공용 데이터베이스 환경에서 비로그인 유저(anon)의 접근이나 타인의 태스크 데이터가 노출될 수 있는 위험성 인지.
+- **해결 방법**: Supabase의 **Row Level Security(RLS) 보안 정책**을 활성화하고, 현재 로그인한 유저의 고유 UID(`auth.uid()`)와 일치하는 데이터만 CRUD(조회·생성·수정·삭제)가 가능하도록 엄격하게 정책을 계승시켜 데이터 보안을 강화함.
